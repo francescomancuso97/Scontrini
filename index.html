@@ -34,12 +34,8 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
 <main>
   <h1>Scontrini</h1>
 
-  <section class="card" id="login">
-    <p>Accedi con Google per salvare le foto in Drive e le righe nel foglio.</p>
-    <button id="btnLogin">Accedi con Google</button>
-  </section>
 
-  <section class="card" id="app" hidden>
+  <section class="card" id="app">
     <label class="btn" for="foto" tabindex="0" id="btnFoto">Scatta o scegli una foto</label>
     <input type="file" id="foto" accept="image/*" capture="environment">
     <img id="prev" alt="Anteprima scontrino" hidden>
@@ -59,75 +55,14 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
   </section>
 </main>
 
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
-// === DA COMPILARE: il tuo ID client OAuth (tipo "Applicazione web") ===
-const CLIENT_ID = "1090865859131-cd6pre0dei8cagcukofarnj2avgv5e3t.apps.googleusercontent.com";
-const SCOPE = "https://www.googleapis.com/auth/drive.file";
+// === DA COMPILARE: indirizzo dello script Google e parola segreta (la stessa di Code.gs) ===
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxWZGgXZ3etL_MlHPbThoi1rg3LSnjm5aJxA7UAUqPADECwxGZYSXFxjj6P77DPZWyt/exec";
+const CHIAVE = "1Eugenio1";
 const $ = id => document.getElementById(id);
-let token = null, tokenExp = 0, tokenClient = null, blob = null;
-
-const store = {
-  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
-  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
-};
+let blob = null;
 function say(t, err){ const m=$("msg"); m.textContent=t||""; m.className=err?"err":""; }
-
-// ---------- Accesso Google ----------
-function initAuth(){
-  tokenClient = google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID, scope:SCOPE, callback:()=>{}});
-}
-function getToken(prompt){
-  return new Promise((resolve,reject)=>{
-    if(token && Date.now() < tokenExp) return resolve(token);
-    if(!tokenClient) return reject(new Error("Google non è ancora caricato, riprova."));
-    tokenClient.callback = r => {
-      if(r.error) return reject(new Error(r.error));
-      token = r.access_token; tokenExp = Date.now() + (r.expires_in-60)*1000;
-      store.set("hadLogin","1"); resolve(token);
-    };
-    tokenClient.requestAccessToken({prompt: prompt||""});
-  });
-}
-$("btnLogin").onclick = async () => {
-  try { await getToken("consent"); $("login").hidden=true; $("app").hidden=false; }
-  catch(e){ alert("Accesso non riuscito: "+e.message); }
-};
-window.addEventListener("load", () => {
-  const t = setInterval(()=>{ if(window.google && google.accounts){ clearInterval(t); initAuth(); } }, 200);
-});
-
-// ---------- Chiamate Google ----------
-async function g(url, opts){
-  const tk = await getToken();
-  const r = await fetch(url, Object.assign({}, opts, {headers:Object.assign({Authorization:"Bearer "+tk}, (opts&&opts.headers)||{})}));
-  if(!r.ok) throw new Error("Errore Google ("+r.status+"): "+(await r.text()).slice(0,200));
-  return r.json();
-}
-async function ensureFolderAndSheet(){
-  let folder = store.get("folderId"), sheet = store.get("sheetId");
-  if(!folder){
-    const f = await g("https://www.googleapis.com/drive/v3/files",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({name:"Scontrini",mimeType:"application/vnd.google-apps.folder"})});
-    folder = f.id; store.set("folderId",folder);
-  }
-  if(!sheet){
-    const s = await g("https://www.googleapis.com/drive/v3/files",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({name:"Scontrini",mimeType:"application/vnd.google-apps.spreadsheet",parents:[folder]})});
-    sheet = s.id; store.set("sheetId",sheet);
-    await g(`https://sheets.googleapis.com/v4/spreadsheets/${sheet}/values/A1:C1:append?valueInputOption=USER_ENTERED`,
-      {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({values:[["Data","Ora","Importo"]]})});
-  }
-  return {folder, sheet};
-}
-async function uploadPhoto(name, folder){
-  const meta = {name, parents:[folder], mimeType:"image/jpeg"};
-  const fd = new FormData();
-  fd.append("metadata", new Blob([JSON.stringify(meta)],{type:"application/json"}));
-  fd.append("file", blob);
-  return g("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {method:"POST", body:fd});
-}
 
 // ---------- Foto e lettura ----------
 function resize(file, max){
@@ -235,20 +170,32 @@ $("foto").onchange = async e => {
 $("btnNuovo").onclick = () => { $("campi").hidden=true; $("prev").hidden=true; $("foto").value=""; blob=null; say(""); };
 
 // ---------- Salvataggio ----------
+function toBase64(b){
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(",")[1]);
+    fr.onerror = () => rej(new Error("Impossibile leggere la foto"));
+    fr.readAsDataURL(b);
+  });
+}
 $("btnSalva").onclick = async () => {
   const d=$("data").value, o=$("ora").value, i=$("importo").value.trim().replace(/\./g,",");
   if(!d||!o||!/^\d+(,\d{1,2})?$/.test(i)){ say("Compila data, ora e un importo valido (es. 12,50).", true); return; }
+  if(!blob){ say("Prima scatta o scegli una foto.", true); return; }
   $("btnSalva").disabled = true; say("Salvo…");
   try{
-    const {folder, sheet} = await ensureFolderAndSheet();
-    const name = `${d}_${o.replace(":","-")}.jpg`;
-    await uploadPhoto(name, folder);
     const [y,mo,da] = d.split("-");
-    await g(`https://sheets.googleapis.com/v4/spreadsheets/${sheet}/values/A:C:append?valueInputOption=USER_ENTERED`,
-      {method:"POST",headers:{"Content-Type":"application/json"},
-       body:JSON.stringify({values:[[`${da}/${mo}/${y}`, o, parseFloat(i.replace(",","."))]]})});
-    say("Salvato: "+name);
-    $("linkFoglio").href = "https://docs.google.com/spreadsheets/d/"+sheet; $("linkFoglio").hidden = false;
+    const nome = `${d}_${o.replace(":","-")}.jpg`;
+    const r = await fetch(SCRIPT_URL, {
+      method: "POST",
+      headers: {"Content-Type": "text/plain;charset=utf-8"},
+      body: JSON.stringify({chiave: CHIAVE, nome, data: `${da}/${mo}/${y}`, ora: o,
+                            importo: parseFloat(i.replace(",",".")), foto: await toBase64(blob)})
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || "Salvataggio non riuscito");
+    say("Salvato: " + nome);
+    $("linkFoglio").href = j.sheetUrl; $("linkFoglio").hidden = false;
     $("campi").hidden=true; $("prev").hidden=true; $("foto").value=""; blob=null;
   }catch(err){ say(err.message, true); }
   finally{ $("btnSalva").disabled = false; }
