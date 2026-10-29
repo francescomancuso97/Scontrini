@@ -35,7 +35,14 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
   <h1>Scontrini</h1>
 
 
-  <section class="card" id="app">
+  <section class="card" id="setup" hidden>
+    <p>Collega l'app al Drive su cui salvare gli scontrini. Lo fai solo la prima volta.</p>
+    <label>Indirizzo dello script <input type="text" id="cfgUrl" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <label>Parola segreta <input type="text" id="cfgKey" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <button id="btnCollega">Collega</button>
+  </section>
+
+  <section class="card" id="app" hidden>
     <label class="btn" for="foto" tabindex="0" id="btnFoto">Scatta o scegli una foto</label>
     <input type="file" id="foto" accept="image/*" capture="environment">
     <img id="prev" alt="Anteprima scontrino" hidden>
@@ -52,17 +59,68 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
     </div>
     <p id="msg" role="status"></p>
     <a id="linkFoglio" href="#" target="_blank" rel="noopener" hidden>Apri il foglio</a>
+    <p id="account"></p>
+    <button class="sec" id="btnCambia">Cambia Drive</button>
   </section>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
-// === DA COMPILARE: indirizzo dello script Google e parola segreta (la stessa di Code.gs) ===
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxWZGgXZ3etL_MlHPbThoi1rg3LSnjm5aJxA7UAUqPADECwxGZYSXFxjj6P77DPZWyt/exec";
-const CHIAVE = "1Eugenio1";
 const $ = id => document.getElementById(id);
 let blob = null;
 function say(t, err){ const m=$("msg"); m.textContent=t||""; m.className=err?"err":""; }
+
+// ---------- Collegamento al Drive (si fa una volta sola per dispositivo) ----------
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
+  del(k){ try { localStorage.removeItem(k); } catch(e){} }
+};
+let SCRIPT_URL = store.get("scriptUrl") || "", CHIAVE = store.get("chiave") || "";
+
+async function chiama(payload){
+  const r = await fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: {"Content-Type": "text/plain;charset=utf-8"},
+    body: JSON.stringify(Object.assign({chiave: CHIAVE}, payload))
+  });
+  const t = await r.text();
+  let j;
+  try { j = JSON.parse(t); }
+  catch(e){ throw new Error("Risposta non valida dallo script: controlla che l'accesso sia impostato su «Chiunque»."); }
+  if(!j.ok) throw new Error(j.error || "Operazione non riuscita");
+  return j;
+}
+function mostra(){
+  const ok = !!(SCRIPT_URL && CHIAVE);
+  $("setup").hidden = ok; $("app").hidden = !ok;
+  const acc = store.get("account");
+  $("account").textContent = acc ? "Drive collegato: " + acc : "";
+}
+$("btnCollega").onclick = async () => {
+  const u = $("cfgUrl").value.trim(), k = $("cfgKey").value.trim();
+  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u) || !k){
+    alert("Controlla i dati: l'indirizzo deve terminare con /exec e la parola segreta non può essere vuota."); return;
+  }
+  SCRIPT_URL = u; CHIAVE = k;
+  $("btnCollega").disabled = true; $("btnCollega").textContent = "Verifico…";
+  try{
+    const j = await chiama({azione:"verifica"});
+    store.set("scriptUrl", u); store.set("chiave", k); store.set("account", j.account || "");
+    mostra();
+  }catch(err){
+    SCRIPT_URL = ""; CHIAVE = "";
+    alert("Collegamento non riuscito: " + err.message);
+  }finally{
+    $("btnCollega").disabled = false; $("btnCollega").textContent = "Collega";
+  }
+};
+$("btnCambia").onclick = () => {
+  if(!confirm("Scollegare questo Drive per collegarne un altro?")) return;
+  store.del("scriptUrl"); store.del("chiave"); store.del("account");
+  SCRIPT_URL = ""; CHIAVE = ""; say(""); mostra();
+};
+mostra();
 
 // ---------- Foto e lettura ----------
 function resize(file, max){
@@ -185,16 +243,9 @@ $("btnSalva").onclick = async () => {
   $("btnSalva").disabled = true; say("Salvo…");
   try{
     const [y,mo,da] = d.split("-");
-    const nome = `${d}_${o.replace(":","-")}.jpg`;
-    const r = await fetch(SCRIPT_URL, {
-      method: "POST",
-      headers: {"Content-Type": "text/plain;charset=utf-8"},
-      body: JSON.stringify({chiave: CHIAVE, nome, data: `${da}/${mo}/${y}`, ora: o,
-                            importo: parseFloat(i.replace(",",".")), foto: await toBase64(blob)})
-    });
-    const j = await r.json();
-    if(!j.ok) throw new Error(j.error || "Salvataggio non riuscito");
-    say("Salvato: " + nome);
+    const j = await chiama({azione:"salva", dataIso:d, data:`${da}/${mo}/${y}`, ora:o,
+                            importo:parseFloat(i.replace(",",".")), foto: await toBase64(blob)});
+    say(`Salvato in «Settimana ${j.settimana}» come ${j.nome}`);
     $("linkFoglio").href = j.sheetUrl; $("linkFoglio").hidden = false;
     $("campi").hidden=true; $("prev").hidden=true; $("foto").value=""; blob=null;
   }catch(err){ say(err.message, true); }
