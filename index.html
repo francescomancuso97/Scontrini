@@ -31,6 +31,25 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
 </style>
 </head>
 <body>
+<script>
+// Se il codice dell'app ha un errore, lo mostra a schermo invece di lasciare la pagina vuota
+window.addEventListener("error", function(e){
+  var d = document.getElementById("errore");
+  if(!d){
+    d = document.createElement("div"); d.id = "errore";
+    d.style.cssText = "margin:16px;padding:12px;border:2px solid #b3261e;border-radius:10px;color:#b3261e;background:#fff;font:14px/1.4 system-ui,sans-serif;white-space:pre-wrap";
+    document.body.appendChild(d);
+  }
+  d.textContent += "Errore: " + e.message + (e.lineno ? " (riga " + e.lineno + ")" : "") + "\n";
+});
+</script>
+<script>
+// ===== CONFIGURAZIONE: cambia SOLO il testo tra le virgolette, lasciando virgolette e virgole =====
+window.CONFIG = {
+  scriptUrl: "https://script.google.com/macros/s/AKfycbxuOxurOJ9jKjgGTZoyFhG4tOB1_R0kZOowGIFpvaEfPxNGQ2mPYzBbyhybk666f0e9Ig/exec",
+  chiave: "parolasegreta"
+};
+</script>
 <main>
   <h1>Scontrini</h1>
 
@@ -64,6 +83,7 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
     <p id="account"></p>
     <button class="sec" id="btnCambia">Cambia utente</button>
   </section>
+  <p style="text-align:center;font-size:.8rem">App v7</p>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
@@ -72,9 +92,8 @@ const $ = id => document.getElementById(id);
 let blob = null;
 function say(t, err){ const m=$("msg"); m.textContent=t||""; m.className=err?"err":""; }
 
-// === DA COMPILARE (una sola volta): indirizzo dello script e parola segreta, gli stessi di Code.gs ===
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwrIkLnT2wLGSZYPi2VvQmKO6PwC1NqbjW-cbMAq4dk/dev";
-const CHIAVE = "*";
+const SCRIPT_URL = String((window.CONFIG || {}).scriptUrl || "").trim();
+const CHIAVE = String((window.CONFIG || {}).chiave || "").trim();
 
 // ---------- Utente (si sceglie una volta sola per dispositivo) ----------
 const store = {
