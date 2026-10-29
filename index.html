@@ -43,8 +43,10 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
   </section>
 
   <section class="card" id="app" hidden>
-    <label class="btn" for="foto" tabindex="0" id="btnFoto">Scatta o scegli una foto</label>
+    <label class="btn" for="foto">Scatta una foto</label>
     <input type="file" id="foto" accept="image/*" capture="environment">
+    <label class="btn sec" for="archivio">Scegli dall'archivio</label>
+    <input type="file" id="archivio" accept="image/*">
     <img id="prev" alt="Anteprima scontrino" hidden>
     <div id="campi" hidden>
       <div style="display:grid;gap:14px">
@@ -207,8 +209,8 @@ async function runOcr(canvas, psm){
   } finally { await worker.terminate(); }
 }
 
-$("foto").onchange = async e => {
-  const f = e.target.files[0]; if(!f) return;
+$("foto").onchange = $("archivio").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if(!f) return;
   $("campi").hidden = true; say("Preparo la foto…");
   try{
     blob = await resize(f, 1800);
@@ -225,7 +227,7 @@ $("foto").onchange = async e => {
     say(d.data && d.ora && d.importo ? "Controlla i dati e salva." : "Alcuni dati non sono stati letti: completali a mano.");
   }catch(err){ say(err.message, true); }
 };
-$("btnNuovo").onclick = () => { $("campi").hidden=true; $("prev").hidden=true; $("foto").value=""; blob=null; say(""); };
+$("btnNuovo").onclick = () => { $("campi").hidden=true; $("prev").hidden=true; $("foto").value=""; $("archivio").value=""; blob=null; say(""); };
 
 // ---------- Salvataggio ----------
 function toBase64(b){
@@ -247,7 +249,7 @@ $("btnSalva").onclick = async () => {
                             importo:parseFloat(i.replace(",",".")), foto: await toBase64(blob)});
     say(`Salvato in «Settimana ${j.settimana}» come ${j.nome}`);
     $("linkFoglio").href = j.sheetUrl; $("linkFoglio").hidden = false;
-    $("campi").hidden=true; $("prev").hidden=true; $("foto").value=""; blob=null;
+    $("campi").hidden=true; $("prev").hidden=true; $("foto").value=""; $("archivio").value=""; blob=null;
   }catch(err){ say(err.message, true); }
   finally{ $("btnSalva").disabled = false; }
 };
