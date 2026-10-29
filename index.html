@@ -44,10 +44,9 @@ window.addEventListener("error", function(e){
 });
 </script>
 <script>
-// ===== CONFIGURAZIONE: cambia SOLO il testo tra le virgolette, lasciando virgolette e virgole =====
+// ===== CONFIGURAZIONE: cambia SOLO l'indirizzo tra le virgolette (quello che termina con /exec) =====
 window.CONFIG = {
-  scriptUrl: "https://script.google.com/macros/s/AKfycbxuOxurOJ9jKjgGTZoyFhG4tOB1_R0kZOowGIFpvaEfPxNGQ2mPYzBbyhybk666f0e9Ig/exec",
-  chiave: "parolasegreta"
+  scriptUrl: "https://script.google.com/macros/s/AKfycbwIXnr94A0wOmpSqPthk-F40pI0IPXY0z_ATkSXoWGmzxYYdClv4z2Kzl6Z1oPj9pnPdw/exec"
 };
 </script>
 <main>
@@ -83,7 +82,7 @@ window.CONFIG = {
     <p id="account"></p>
     <button class="sec" id="btnCambia">Cambia utente</button>
   </section>
-  <p style="text-align:center;font-size:.8rem">App v7</p>
+  <p style="text-align:center;font-size:.8rem">App v8</p>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
@@ -93,7 +92,6 @@ let blob = null;
 function say(t, err){ const m=$("msg"); m.textContent=t||""; m.className=err?"err":""; }
 
 const SCRIPT_URL = String((window.CONFIG || {}).scriptUrl || "").trim();
-const CHIAVE = String((window.CONFIG || {}).chiave || "").trim();
 
 // ---------- Utente (si sceglie una volta sola per dispositivo) ----------
 const store = {
@@ -109,7 +107,7 @@ async function chiama(payload){
   const r = await fetch(SCRIPT_URL, {
     method: "POST",
     headers: {"Content-Type": "text/plain;charset=utf-8"},
-    body: JSON.stringify(Object.assign({chiave: CHIAVE, utente: UTENTE}, payload))
+    body: JSON.stringify(Object.assign({utente: UTENTE}, payload))
   });
   const t = await r.text();
   let j;
