@@ -22,7 +22,7 @@ button:disabled{opacity:.5;cursor:default}
 button:focus-visible,.btn:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
 label{display:grid;gap:4px;font-weight:600;font-size:.95rem}
-input[type=date],input[type=time],input[type=text]{font:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%}
+select,input[type=date],input[type=time],input[type=text]{font:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justify-self:center;border:1px solid var(--line)}
 #msg{min-height:1.4em;font-weight:600}
@@ -36,10 +36,10 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
 
 
   <section class="card" id="setup" hidden>
-    <p>Collega l'app al Drive su cui salvare gli scontrini. Lo fai solo la prima volta.</p>
-    <label>Indirizzo dello script <input type="text" id="cfgUrl" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-    <label>Parola segreta <input type="text" id="cfgKey" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-    <button id="btnCollega">Collega</button>
+    <p>Scegli il tuo codice utente. Lo fai solo la prima volta.</p>
+    <label>Utente <select id="selUtente"><option>Caricamento…</option></select></label>
+    <p id="setupMsg" role="status"></p>
+    <button id="btnCollega" disabled>Continua</button>
   </section>
 
   <section class="card" id="app" hidden>
@@ -62,7 +62,7 @@ img{max-width:100%;max-height:220px;object-fit:contain;border-radius:10px;justif
     <p id="msg" role="status"></p>
     <a id="linkFoglio" href="#" target="_blank" rel="noopener" hidden>Apri il foglio</a>
     <p id="account"></p>
-    <button class="sec" id="btnCambia">Cambia Drive</button>
+    <button class="sec" id="btnCambia">Cambia utente</button>
   </section>
 </main>
 
@@ -72,19 +72,25 @@ const $ = id => document.getElementById(id);
 let blob = null;
 function say(t, err){ const m=$("msg"); m.textContent=t||""; m.className=err?"err":""; }
 
-// ---------- Collegamento al Drive (si fa una volta sola per dispositivo) ----------
+// === DA COMPILARE (una sola volta): indirizzo dello script e parola segreta, gli stessi di Code.gs ===
+const SCRIPT_URL = "INCOLLA_QUI_L_INDIRIZZO_DELLO_SCRIPT";
+const CHIAVE = "SCEGLI_UNA_PAROLA_SEGRETA";
+
+// ---------- Utente (si sceglie una volta sola per dispositivo) ----------
 const store = {
   get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} }
 };
-let SCRIPT_URL = store.get("scriptUrl") || "", CHIAVE = store.get("chiave") || "";
+["scriptUrl","chiave","account"].forEach(k => store.del(k)); // residui della versione precedente
+let UTENTE = store.get("utente") || "", NOME = store.get("nomeUtente") || "";
+let elencoCaricato = false;
 
 async function chiama(payload){
   const r = await fetch(SCRIPT_URL, {
     method: "POST",
     headers: {"Content-Type": "text/plain;charset=utf-8"},
-    body: JSON.stringify(Object.assign({chiave: CHIAVE}, payload))
+    body: JSON.stringify(Object.assign({chiave: CHIAVE, utente: UTENTE}, payload))
   });
   const t = await r.text();
   let j;
@@ -93,34 +99,47 @@ async function chiama(payload){
   if(!j.ok) throw new Error(j.error || "Operazione non riuscita");
   return j;
 }
-function mostra(){
-  const ok = !!(SCRIPT_URL && CHIAVE);
-  $("setup").hidden = ok; $("app").hidden = !ok;
-  const acc = store.get("account");
-  $("account").textContent = acc ? "Drive collegato: " + acc : "";
-}
-$("btnCollega").onclick = async () => {
-  const u = $("cfgUrl").value.trim(), k = $("cfgKey").value.trim();
-  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u) || !k){
-    alert("Controlla i dati: l'indirizzo deve terminare con /exec e la parola segreta non può essere vuota."); return;
+async function caricaUtenti(){
+  const sel = $("selUtente"), btn = $("btnCollega"), msg = $("setupMsg");
+  elencoCaricato = false; msg.textContent = ""; btn.disabled = true; btn.textContent = "Continua";
+  sel.innerHTML = "<option>Caricamento…</option>";
+  if(SCRIPT_URL.indexOf("INCOLLA_QUI") === 0){
+    sel.innerHTML = "<option>Non configurato</option>";
+    msg.textContent = "L'app non è ancora configurata: manca l'indirizzo dello script in index.html.";
+    return;
   }
-  SCRIPT_URL = u; CHIAVE = k;
-  $("btnCollega").disabled = true; $("btnCollega").textContent = "Verifico…";
   try{
-    const j = await chiama({azione:"verifica"});
-    store.set("scriptUrl", u); store.set("chiave", k); store.set("account", j.account || "");
-    mostra();
+    const j = await chiama({azione:"utenti"});
+    sel.innerHTML = "";
+    j.utenti.forEach(u => {
+      const o = document.createElement("option");
+      o.value = u.codice; o.dataset.nome = u.nome; o.textContent = u.codice + " – " + u.nome;
+      sel.appendChild(o);
+    });
+    elencoCaricato = true; btn.disabled = false;
   }catch(err){
-    SCRIPT_URL = ""; CHIAVE = "";
-    alert("Collegamento non riuscito: " + err.message);
-  }finally{
-    $("btnCollega").disabled = false; $("btnCollega").textContent = "Collega";
+    sel.innerHTML = "<option>Non disponibile</option>";
+    msg.textContent = err.message;
+    btn.disabled = false; btn.textContent = "Riprova";
   }
+}
+function mostra(){
+  const ok = !!UTENTE;
+  $("setup").hidden = ok; $("app").hidden = !ok;
+  $("account").textContent = ok ? "Utente: " + UTENTE + (NOME ? " – " + NOME : "") : "";
+  if(!ok) caricaUtenti();
+}
+$("btnCollega").onclick = () => {
+  if(!elencoCaricato){ caricaUtenti(); return; }
+  const o = $("selUtente").selectedOptions[0]; if(!o) return;
+  UTENTE = o.value; NOME = o.dataset.nome || "";
+  store.set("utente", UTENTE); store.set("nomeUtente", NOME);
+  mostra();
 };
 $("btnCambia").onclick = () => {
-  if(!confirm("Scollegare questo Drive per collegarne un altro?")) return;
-  store.del("scriptUrl"); store.del("chiave"); store.del("account");
-  SCRIPT_URL = ""; CHIAVE = ""; say(""); mostra();
+  if(!confirm("Cambiare utente su questo dispositivo?")) return;
+  store.del("utente"); store.del("nomeUtente");
+  UTENTE = ""; NOME = ""; say(""); mostra();
 };
 mostra();
 
